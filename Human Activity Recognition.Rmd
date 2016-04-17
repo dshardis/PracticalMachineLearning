@@ -1,0 +1,138 @@
+---
+title: "Human Activiy Recognition:Predicting exercise quality from device data"
+author: "David Hardister"
+date: "April 16, 2016"
+output: html_document
+---
+
+### Introduction
+The purpose of this project is to use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants, assess the quality of their exercises based on correctly and incorrectly performed tasks (5 different methods), and predict the manner in which they did the exercise from the "classe" variable in the training set. Each participant performed one set of ten repetitions of bicep curls using five different methods:
+
+  1. exactly according to the specification (Class A),
+  2. throwing the elbows to the front (Class B),
+  3. lifting the dumbbell only halfway (Class C),
+  4. lowering the dumbbell only halfway (Class D), and
+  5. throwing the hips to the front (Class E). 
+Class A is classified as an exercise performed correctly whereas the remaining classes are classified as exercises performed incorrectly.
+
+### The Data
+The caret and randomForest libraries will be used in order to train and predict data.
+```{r}
+library(caret)
+library(randomForest)
+set.seed(4321)
+options(warn=-1)
+```
+
+The data is available online, so using the code below we are able to extract the data directly and load it into the program for analysis.
+
+```{r}
+train_file <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+train <- read.csv(url(train_file))
+test_file <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+test <- read.csv(url(test_file))
+```
+
+### Cleaning and Segmenting the Data
+There are 19,622 records and 160 variables in the raw training data set:
+
+```{r}
+str(train)
+```
+
+After exploring the data, it is clear that there are many variables that should be removed. The variables that have mostly blanks and/or N/A data will be removed. The variables that are used to identify individuals and timestamps are also removed.
+
+```{r}
+columns <- c(8:11,37:49,60:68,84:86,102,113:124,140,151:160)
+training <- subset(train[columns])
+dim(training)
+```
+
+After removing the unnecessary data, we are left with 53 variables. This will surely speed up our analysis. We will still need to split this data so we will have a partial set to validate on before we use our final model to predict on the test set. To do this, we will allocate 70% of the training set to train the data and the remaining 30% to validate. The data will be proportionately divided on the classe variable which will be used to test the accuracy of our predictions. 
+
+```{r}
+inTrain <- createDataPartition(y = training$classe, p=0.7, list=FALSE)
+train_data <- training[inTrain, ]
+validate_data <- training[-inTrain, ]
+```
+
+Looking at the data comparison below, we can see that we have allocated the correct number.
+
+```{r}
+df <- rbind("training" = dim(train_data),"validation" = dim(validate_data))
+colnames(df) <- c("records", "variables")
+df
+```
+
+##Training
+```{r}
+summary(train_data$classe)/nrow(train_data)
+```
+##Validation
+```{r}
+summary(validate_data$classe)/nrow(validate_data)
+```
+
+### The Model
+We will first use the train fuction from the caret package to train the model, and we will then use the randomForest function from the randomForest package to calculate the out of sample error. Training the model will take some time because of the size of the data set and the number of trees we will be calculating. We will be training on 500 trees by default and we will see that the classification method will use 27 variables at each split.
+
+```{r}
+rf <- train(classe ~ ., data = train_data, method = "rf", prox = TRUE)
+rf$finalModel
+```
+
+### Cross Validation
+We can see from the Confusion Matrix below that we can correctly predict the vast majority of the classe variable from the other variables from our training set.
+
+```{r}
+pred <- predict(rf, train_data)
+table(pred, train_data$classe)
+```
+
+This success on the training set is to be expected, so we will need to predict values from the validation set that we set aside earlier.
+
+```{r}
+pred <- predict(rf, validate_data)
+```
+
+### Estimating the Error
+The in sample error is the error that results from applying the predictive model to the training set.
+The out of sample error is the error that results from applying the predictive model to a new data set; this will be our validation data set and it will be used to show how well the model generalizes.
+
+##In Sample Error
+```{r}
+rf$finalModel
+```
+
+The in sample error is less than 1%. Let's see what we can expect from the out of sample error.
+
+##Out of Sample Error
+```{r}
+rf2 <- randomForest(classe ~ ., data = train_data)
+prediction2 <- predict(rf2, validate_data, type = "class")
+predrf2 <- confusionMatrix(prediction2, validate_data$classe)
+predrf2
+```
+
+The out of sample error is also expected to be less than 1% so this model is expected to perform well on external data.
+
+### Conclusion
+The in and out of sample errors are both very low so I am comfortable stating that this model will generalize well with new data sets. I am confident that this model will be of high accuracy when being used on external data, so we can run the predictive model on the test set.
+
+```{r}
+answers <- predict(rf, test)
+answers
+```
+
+We will use these results to load each answer to individual text files in the required format for submission:
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
